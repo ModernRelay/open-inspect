@@ -51,6 +51,16 @@ Base image definition with:
 - **models.py**: Repository and snapshot data models
 - **store.py**: Persistent metadata storage
 
+### Auth (`src/auth/`)
+
+- **github_app.py**: GitHub App token generation for repo access
+- **internal.py**: HMAC authentication for control plane requests
+
+### API (`src/`)
+
+- **web_api.py**: HTTP endpoints called by the control plane
+- **functions.py**: Modal function definitions (used internally)
+
 ### Scheduler (`src/scheduler/`)
 
 - **image_builder.py**: Image rebuild infrastructure (scheduling currently disabled)
@@ -77,7 +87,9 @@ modal secret create github-app \
   GITHUB_APP_INSTALLATION_ID="12345678"
 
 # Internal API secret (for control plane authentication)
-modal secret create internal-api MODAL_API_SECRET="$(openssl rand -hex 32)"
+modal secret create internal-api \
+  MODAL_API_SECRET="$(openssl rand -hex 32)" \
+  ALLOWED_CONTROL_PLANE_HOSTS="your-control-plane.workers.dev"
 ```
 
 See `.env.example` for a full list of environment variables.
@@ -98,53 +110,44 @@ modal run src/
 > **Note**: Never deploy `src/app.py` directly - it only defines the app and shared resources.
 > Use `deploy.py` or `-m src` to ensure all function modules are registered.
 
-### Register a Repository
+## HTTP API
 
-```python
-from modal import App
-import modal
+The control plane communicates with Modal via HTTP endpoints. All endpoints (except health)
+require HMAC authentication via the `Authorization` header.
 
-# Get the deployed app
-app = modal.App.lookup("open-inspect")
+Endpoint URLs follow the pattern: `https://{workspace}--open-inspect-{endpoint}.modal.run`
 
-# Register a repository for scheduled builds
-register = modal.Function.lookup("open-inspect", "register_repository")
-register.remote(
-    repo_owner="your-org",
-    repo_name="your-repo",
-    default_branch="main",
-)
+### Endpoints
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `api-health` | GET | No | Health check |
+| `api-create-sandbox` | POST | Yes | Create a new sandbox |
+| `api-warm-sandbox` | POST | Yes | Pre-warm a sandbox |
+| `api-snapshot` | GET | Yes | Get latest snapshot for a repo |
+| `api-snapshot-sandbox` | POST | Yes | Take filesystem snapshot |
+| `api-restore-sandbox` | POST | Yes | Restore sandbox from snapshot |
+
+### Example: Create Sandbox
+
+```bash
+curl -X POST "https://${WORKSPACE}--open-inspect-api-create-sandbox.modal.run" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "session-123",
+    "repo_owner": "your-org",
+    "repo_name": "your-repo",
+    "control_plane_url": "https://your-control-plane.workers.dev",
+    "sandbox_auth_token": "your-token"
+  }'
 ```
 
-### Trigger a Build
+### Example: Health Check
 
-```python
-from modal import App
-import modal
-
-build = modal.Function.lookup("open-inspect", "build_single_repo_image")
-result = build.remote(
-    repo_owner="your-org",
-    repo_name="your-repo",
-)
-print(result)  # {"snapshot_id": "...", "status": "success", ...}
-```
-
-### Create a Sandbox
-
-```python
-from modal import App
-import modal
-
-create = modal.Function.lookup("open-inspect", "create_sandbox")
-result = create.remote(
-    session_id="session-123",
-    repo_owner="your-org",
-    repo_name="your-repo",
-    control_plane_url="https://your-control-plane.com",
-    sandbox_auth_token="your-token",
-)
-print(result)  # {"sandbox_id": "...", "status": "warming"}
+```bash
+curl "https://${WORKSPACE}--open-inspect-api-health.modal.run"
+# {"success": true, "data": {"status": "healthy", "service": "open-inspect-modal"}}
 ```
 
 ## Environment Variables
@@ -165,12 +168,10 @@ Set via Modal secrets:
 | Criterion | Test Method |
 |-----------|-------------|
 | App deploys successfully | `modal deploy deploy.py` completes without errors |
-| Sandbox starts from snapshot | Time `create_sandbox()` after warm |
-| Git sync completes | Verify HEAD matches origin |
-| OpenCode server responds | `curl localhost:4096/global/health` |
-| Snapshot preserves state | Create file, snapshot, restore, verify |
-| Crash recovery works | Kill OpenCode, verify restart |
-| Session persists | Send 2 prompts, verify context |
+| Health endpoint responds | `curl https://{workspace}--open-inspect-api-health.modal.run` |
+| Sandbox creation works | POST to `api-create-sandbox` returns success |
+| Git sync completes | Verify HEAD matches origin after sandbox start |
+| Snapshot/restore works | Take snapshot, restore, verify workspace state |
 
 ## Development
 
@@ -183,4 +184,19 @@ pytest tests/
 
 # Type check
 mypy src/
+```
+
+### CLI Tools
+
+Development utilities available via Modal CLI:
+
+```bash
+# Check service health
+modal run src/cli.py::check_health
+
+# List registered repositories
+modal run src/cli.py::list_repos
+
+# Register a repository (for testing)
+modal run src/cli.py::register_repo --owner your-org --name your-repo
 ```
