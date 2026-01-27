@@ -11,6 +11,4 @@ export {
   type GitHubAppConfig,
 } from "./github-app";
 
-export { verifyWebhookSignature } from "./webhook";
-
 export { verifyInternalToken, generateInternalToken } from "./internal";

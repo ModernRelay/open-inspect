@@ -9,7 +9,7 @@ The control plane provides:
 - **Session Management**: SQLite-backed Durable Objects for each session
 - **Real-time Streaming**: WebSocket connections with hibernation support
 - **Multi-client Sync**: Web, Slack, extension clients all see the same state
-- **GitHub Integration**: OAuth authentication and webhook handling
+- **GitHub Integration**: GitHub App for repository access
 - **Token Encryption**: AES-256-GCM encryption for GitHub tokens at rest
 
 ## Architecture
@@ -74,12 +74,6 @@ The control plane provides:
 | `/repos`                       | GET    | List repositories    |
 | `/repos/:owner/:name/metadata` | GET    | Get repo metadata    |
 | `/repos/:owner/:name/metadata` | PUT    | Update repo metadata |
-
-### Webhooks
-
-| Endpoint           | Method | Description   |
-| ------------------ | ------ | ------------- |
-| `/webhooks/github` | POST   | GitHub events |
 
 ## WebSocket Protocol
 

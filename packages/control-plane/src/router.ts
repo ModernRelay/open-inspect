@@ -4,7 +4,6 @@
 
 import type { Env, CreateSessionRequest, CreateSessionResponse } from "./types";
 import { generateId, encryptToken } from "./auth/crypto";
-import { verifyWebhookSignature } from "./auth/webhook";
 import { verifyInternalToken } from "./auth/internal";
 import { getGitHubAppConfig, listInstallationRepositories } from "./auth/github-app";
 import type {
@@ -62,12 +61,8 @@ function getSessionStub(env: Env, match: RegExpMatchArray): DurableObjectStub | 
 
 /**
  * Routes that do not require authentication.
- * These are either public endpoints or have their own authentication mechanism.
  */
-const PUBLIC_ROUTES: RegExp[] = [
-  /^\/health$/,
-  /^\/webhooks\/github$/, // GitHub webhooks use signature verification
-];
+const PUBLIC_ROUTES: RegExp[] = [/^\/health$/];
 
 /**
  * Routes that accept sandbox authentication.
@@ -277,13 +272,6 @@ const routes: Route[] = [
     method: "GET",
     pattern: parsePattern("/repos/:owner/:name/metadata"),
     handler: handleGetRepoMetadata,
-  },
-
-  // Webhooks
-  {
-    method: "POST",
-    pattern: parsePattern("/webhooks/github"),
-    handler: handleGitHubWebhook,
   },
 ];
 
@@ -1060,77 +1048,4 @@ async function handleGetRepoMetadata(
     console.error("Failed to get repo metadata:", e);
     return error("Failed to get metadata", 500);
   }
-}
-
-// Webhook handlers
-
-async function handleGitHubWebhook(
-  request: Request,
-  env: Env,
-  _match: RegExpMatchArray
-): Promise<Response> {
-  const event = request.headers.get("X-GitHub-Event");
-  const signature = request.headers.get("X-Hub-Signature-256");
-  const deliveryId = request.headers.get("X-GitHub-Delivery");
-
-  // Get the raw body for signature verification
-  const payload = await request.text();
-
-  // Verify webhook signature
-  if (!env.GITHUB_WEBHOOK_SECRET) {
-    console.error("[webhook] GITHUB_WEBHOOK_SECRET not configured");
-    return error("Webhook secret not configured", 500);
-  }
-
-  const isValid = await verifyWebhookSignature(payload, signature, env.GITHUB_WEBHOOK_SECRET);
-
-  if (!isValid) {
-    console.error(`[webhook] Invalid signature for delivery ${deliveryId}`);
-    return error("Invalid webhook signature", 401);
-  }
-
-  console.log(`[webhook] Verified webhook: event=${event}, delivery=${deliveryId}`);
-
-  // Parse the verified payload
-  let data: {
-    action?: string;
-    repository?: { full_name?: string };
-    [key: string]: unknown;
-  };
-  try {
-    data = JSON.parse(payload);
-  } catch (_e) {
-    console.error("[webhook] Invalid JSON payload");
-    return error("Invalid JSON payload", 400);
-  }
-
-  // Process webhook events
-  switch (event) {
-    case "push":
-      // TODO: Handle push events (e.g., trigger session sync)
-      console.log(`[webhook] Push event to ${data.repository?.full_name ?? "unknown"}`);
-      break;
-    case "pull_request":
-      // TODO: Handle PR events (e.g., update session status)
-      console.log(
-        `[webhook] PR event: ${data.action ?? "unknown"} on ${data.repository?.full_name ?? "unknown"}`
-      );
-      break;
-    case "pull_request_review":
-      // TODO: Handle review events
-      console.log(`[webhook] PR review event: ${data.action ?? "unknown"}`);
-      break;
-    case "pull_request_review_comment":
-      // TODO: Handle review comment events
-      console.log(`[webhook] PR review comment event: ${data.action ?? "unknown"}`);
-      break;
-    case "ping":
-      // GitHub sends a ping event when webhook is first configured
-      console.log(`[webhook] Ping event received, webhook configured correctly`);
-      break;
-    default:
-      console.log(`[webhook] Unhandled event type: ${event}`);
-  }
-
-  return json({ status: "ok", event, deliveryId });
 }
