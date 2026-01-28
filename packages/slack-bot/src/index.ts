@@ -289,23 +289,28 @@ async function publishAppHome(env: Env, userId: string): Promise<void> {
       { type: "divider" },
       {
         type: "section",
-        block_id: "model_selection",
         text: {
           type: "mrkdwn",
           text: "*Model*\nSelect the Claude model for your coding sessions:",
         },
-        accessory: {
-          type: "static_select",
-          action_id: "select_model",
-          initial_option: {
-            text: { type: "plain_text", text: currentModelInfo.label },
-            value: currentModelInfo.value,
+      },
+      {
+        type: "actions",
+        block_id: "model_selection",
+        elements: [
+          {
+            type: "static_select",
+            action_id: "select_model",
+            initial_option: {
+              text: { type: "plain_text", text: currentModelInfo.label },
+              value: currentModelInfo.value,
+            },
+            options: AVAILABLE_MODELS.map((m) => ({
+              text: { type: "plain_text", text: m.label },
+              value: m.value,
+            })),
           },
-          options: AVAILABLE_MODELS.map((m) => ({
-            text: { type: "plain_text", text: m.label },
-            value: m.value,
-          })),
-        },
+        ],
       },
       { type: "divider" },
       {
