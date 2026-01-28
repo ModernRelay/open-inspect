@@ -1436,6 +1436,29 @@ export class SessionDO extends DurableObject<Env> {
     return null;
   }
 
+  private async warmSandbox(): Promise<void> {
+    const sandboxWs = this.getSandboxWebSocket();
+    if (sandboxWs) {
+      console.log("[DO] warmSandbox: sandbox already connected");
+      return;
+    }
+
+    if (this.isSpawningSandbox) {
+      console.log("[DO] warmSandbox: already spawning");
+      return;
+    }
+
+    const sandbox = this.getSandbox();
+    if (sandbox?.status === "spawning" || sandbox?.status === "connecting") {
+      console.log(`[DO] warmSandbox: sandbox status is ${sandbox.status}, skipping`);
+      return;
+    }
+
+    console.log("[DO] Warming sandbox proactively");
+    this.broadcast({ type: "sandbox_warming" });
+    await this.spawnSandbox();
+  }
+
   /**
    * Process message queue.
    */
@@ -2175,6 +2198,9 @@ export class SessionDO extends DurableObject<Env> {
       "owner",
       now
     );
+
+    console.log("[DO] Triggering sandbox spawn for new session");
+    this.ctx.waitUntil(this.warmSandbox());
 
     return Response.json({ sessionId, status: "created" });
   }
