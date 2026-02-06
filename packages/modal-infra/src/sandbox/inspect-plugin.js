@@ -100,6 +100,12 @@ export default tool({
       }
 
       const result = await response.json()
+
+      if (result?.status === "manual" && result?.createPrUrl) {
+        console.log("[create-pull-request] SUCCESS: branch pushed, manual PR URL generated")
+        return `Branch pushed successfully.\n\nCreate the pull request in GitHub:\n${result.createPrUrl}\n\nUse your logged-in GitHub account to finish creating the PR.`
+      }
+
       console.log(`[create-pull-request] SUCCESS: PR #${result.prNumber} created`)
       return `Pull request created successfully!\n\nPR #${result.prNumber}: ${result.prUrl}\n\nThe PR is now ready for review.`
     } catch (error) {

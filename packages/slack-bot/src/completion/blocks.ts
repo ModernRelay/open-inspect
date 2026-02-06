@@ -81,17 +81,35 @@ export function buildCompletionBlocks(
     ],
   });
 
-  // 5. View Session button
+  const hasPrArtifact = response.artifacts.some((artifact) => artifact.type === "pr");
+  const manualCreatePrUrl = getManualCreatePrUrl(response.artifacts);
+  const actionElements: Array<{
+    type: string;
+    text: { type: string; text: string };
+    url: string;
+    action_id: string;
+  }> = [
+    {
+      type: "button",
+      text: { type: "plain_text", text: "View Session" },
+      url: `${webAppUrl}/session/${sessionId}`,
+      action_id: "view_session",
+    },
+  ];
+
+  if (!hasPrArtifact && manualCreatePrUrl) {
+    actionElements.push({
+      type: "button",
+      text: { type: "plain_text", text: "Create PR" },
+      url: manualCreatePrUrl,
+      action_id: "create_pr",
+    });
+  }
+
+  // 5. Action buttons
   blocks.push({
     type: "actions",
-    elements: [
-      {
-        type: "button",
-        text: { type: "plain_text", text: "View Session" },
-        url: `${webAppUrl}/session/${sessionId}`,
-        action_id: "view_session",
-      },
-    ],
+    elements: actionElements,
   });
 
   return blocks;
@@ -115,4 +133,31 @@ function truncateForSlack(text: string, maxLen: number): string {
     return truncated.slice(0, lastPeriod + 1) + "\n\n_...truncated_";
   }
   return truncated + "...\n\n_...truncated_";
+}
+
+function getManualCreatePrUrl(artifacts: AgentResponse["artifacts"]): string | null {
+  const manualBranchArtifact = artifacts.find((artifact) => {
+    if (artifact.type !== "branch") {
+      return false;
+    }
+    if (!artifact.metadata || typeof artifact.metadata !== "object") {
+      return false;
+    }
+    if (artifact.metadata.mode === "manual_pr") {
+      return true;
+    }
+    // Backward-compatible fallback for older artifacts that may not include mode.
+    return artifact.metadata.mode == null && typeof artifact.metadata.createPrUrl === "string";
+  });
+
+  if (!manualBranchArtifact) {
+    return null;
+  }
+
+  const metadataUrl = manualBranchArtifact.metadata?.createPrUrl;
+  if (typeof metadataUrl === "string" && metadataUrl.length > 0) {
+    return metadataUrl;
+  }
+
+  return manualBranchArtifact.url || null;
 }
