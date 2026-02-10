@@ -540,13 +540,31 @@ export class SessionDO extends DurableObject<Env> {
   /**
    * Handle WebSocket close.
    */
-  async webSocketClose(ws: WebSocket, _code: number, _reason: string): Promise<void> {
+  async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
     this.ensureInitialized();
     const { kind } = this.wsManager.classify(ws);
 
     if (kind === "sandbox") {
-      this.wsManager.clearSandboxSocket();
-      this.updateSandboxStatus("stopped");
+      const wasActive = this.wsManager.clearSandboxSocketIfMatch(ws);
+      if (!wasActive) {
+        // sandboxWs points to a different socket — this close is for a replaced connection.
+        this.log.debug("Ignoring close for replaced sandbox socket", { code });
+        return;
+      }
+
+      const isNormalClose = code === 1000 || code === 1001;
+      if (isNormalClose) {
+        this.updateSandboxStatus("stopped");
+      } else {
+        // Abnormal close (e.g., 1006): leave status unchanged so the bridge can reconnect.
+        // Schedule a heartbeat check to detect truly dead sandboxes.
+        this.log.warn("Sandbox WebSocket abnormal close", {
+          event: "sandbox.abnormal_close",
+          code,
+          reason,
+        });
+        await this.lifecycleManager.scheduleDisconnectCheck();
+      }
     } else {
       const client = this.wsManager.removeClient(ws);
       if (client) {
