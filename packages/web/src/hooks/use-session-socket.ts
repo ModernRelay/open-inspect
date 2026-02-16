@@ -52,6 +52,7 @@ interface SessionState {
   model?: string;
   reasoningEffort?: string;
   isProcessing: boolean;
+  tunnelUrl?: string;
 }
 
 interface Participant {
@@ -79,6 +80,7 @@ interface UseSessionSocketReturn {
   loadingHistory: boolean;
   sendPrompt: (content: string, model?: string, reasoningEffort?: string) => void;
   stopExecution: () => void;
+  tunnelUrl: string | null;
   sendTyping: () => void;
   reconnect: () => void;
   loadOlderEvents: () => void;
@@ -171,6 +173,7 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
       error?: string;
       participantId?: string;
       participant?: { participantId: string; name: string; avatar?: string };
+      tunnelUrl?: string;
       isProcessing?: boolean;
       hasMore?: boolean;
       cursor?: { timestamp: number; id: string } | null;
@@ -311,6 +314,14 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
           if (data.status) {
             const status = data.status;
             setSessionState((prev) => (prev ? { ...prev, sandboxStatus: status } : null));
+          }
+          break;
+
+        case "sandbox_tunnel":
+          if (data.tunnelUrl) {
+            setSessionState((prev) =>
+              prev ? { ...prev, tunnelUrl: data.tunnelUrl } : null
+            );
           }
           break;
 
@@ -636,6 +647,8 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
 
   const isProcessing = sessionState?.isProcessing ?? false;
 
+  const tunnelUrl = sessionState?.tunnelUrl ?? null;
+
   return {
     connected,
     connecting,
@@ -648,6 +661,7 @@ export function useSessionSocket(sessionId: string): UseSessionSocketReturn {
     artifacts,
     currentParticipantId,
     isProcessing,
+    tunnelUrl,
     hasMoreHistory,
     loadingHistory,
     sendPrompt,

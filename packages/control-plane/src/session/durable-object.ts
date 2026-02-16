@@ -247,6 +247,7 @@ export class SessionDO extends DurableObject<Env> {
       updateSandboxStatus: (status) => this.updateSandboxStatus(status),
       updateSandboxForSpawn: (data) => this.repository.updateSandboxForSpawn(data),
       updateSandboxModalObjectId: (id) => this.repository.updateSandboxModalObjectId(id),
+      updateSandboxTunnelUrl: (url) => this.repository.updateSandboxTunnelUrl(url),
       updateSandboxSnapshotImageId: (sandboxId, imageId) =>
         this.repository.updateSandboxSnapshotImageId(sandboxId, imageId),
       updateSandboxLastActivity: (timestamp) =>
@@ -1466,6 +1467,7 @@ export class SessionDO extends DurableObject<Env> {
       model: session?.model ?? DEFAULT_MODEL,
       reasoningEffort: session?.reasoning_effort ?? undefined,
       isProcessing,
+      tunnelUrl: sandbox?.tunnel_url ?? undefined,
     };
   }
 

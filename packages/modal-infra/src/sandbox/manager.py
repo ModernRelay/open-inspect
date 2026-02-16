@@ -24,6 +24,7 @@ from .types import SandboxStatus, SessionConfig
 log = get_logger("manager")
 
 DEFAULT_SANDBOX_TIMEOUT_SECONDS = 7200  # 2 hours
+OPENCODE_PORT = 4096  # Port for OpenCode web UI
 
 
 @dataclass
@@ -52,6 +53,7 @@ class SandboxHandle:
     created_at: float
     snapshot_id: str | None = None
     modal_object_id: str | None = None  # Modal's internal sandbox ID for API calls
+    tunnel_url: str | None = None  # Public URL for OpenCode web UI (via Modal tunnel)
 
     def get_logs(self) -> str:
         """Get sandbox logs."""
@@ -148,11 +150,21 @@ class SandboxManager:
             timeout=config.timeout_seconds,
             workdir="/workspace",
             env=env_vars,
-            # Note: volumes parameter is not supported in Sandbox.create
+            encrypted_ports=[OPENCODE_PORT],  # Expose OpenCode web UI via tunnel
         )
 
         # Get Modal's internal object ID for API calls (snapshot, etc.)
         modal_object_id = sandbox.object_id
+
+        # Get tunnel URL for OpenCode web UI
+        tunnel_url = None
+        try:
+            tunnels = sandbox.tunnels()
+            if OPENCODE_PORT in tunnels:
+                tunnel_url = tunnels[OPENCODE_PORT].url
+                log.info("sandbox.tunnel", tunnel_url=tunnel_url)
+        except Exception as e:
+            log.warn("sandbox.tunnel_error", exc=e)
         duration_ms = int((time.time() - start_time) * 1000)
         log.info(
             "sandbox.create",
@@ -171,6 +183,7 @@ class SandboxManager:
             created_at=time.time(),
             snapshot_id=config.snapshot_id,
             modal_object_id=modal_object_id,
+            tunnel_url=tunnel_url,
         )
 
     async def warm_sandbox(
@@ -370,9 +383,20 @@ class SandboxManager:
             timeout=timeout_seconds,
             workdir="/workspace",
             env=env_vars,
+            encrypted_ports=[OPENCODE_PORT],  # Expose OpenCode web UI via tunnel
         )
 
         modal_object_id = sandbox.object_id
+
+        # Get tunnel URL for OpenCode web UI
+        tunnel_url = None
+        try:
+            tunnels = sandbox.tunnels()
+            if OPENCODE_PORT in tunnels:
+                tunnel_url = tunnels[OPENCODE_PORT].url
+                log.info("sandbox.tunnel", tunnel_url=tunnel_url)
+        except Exception as e:
+            log.warn("sandbox.tunnel_error", exc=e)
 
         duration_ms = int((time.time() - start_time) * 1000)
         log.info(
@@ -393,6 +417,7 @@ class SandboxManager:
             created_at=time.time(),
             snapshot_id=snapshot_image_id,
             modal_object_id=modal_object_id,
+            tunnel_url=tunnel_url,
         )
 
     async def maintain_warm_pool(

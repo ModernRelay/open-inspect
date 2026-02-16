@@ -313,6 +313,13 @@ export class SessionRepository {
     );
   }
 
+  updateSandboxTunnelUrl(tunnelUrl: string): void {
+    this.sql.exec(
+      `UPDATE sandbox SET tunnel_url = ? WHERE id = (SELECT id FROM sandbox LIMIT 1)`,
+      tunnelUrl
+    );
+  }
+
   updateSandboxSnapshotImageId(sandboxId: string, imageId: string): void {
     this.sql.exec(`UPDATE sandbox SET snapshot_image_id = ? WHERE id = ?`, imageId, sandboxId);
   }

@@ -69,6 +69,8 @@ export interface SandboxStorage {
   }): void;
   /** Update sandbox Modal object ID (for snapshot API) */
   updateSandboxModalObjectId(modalObjectId: string): void;
+  /** Update sandbox tunnel URL (for OpenCode web UI) */
+  updateSandboxTunnelUrl(tunnelUrl: string): void;
   /** Update sandbox snapshot image ID */
   updateSandboxSnapshotImageId(sandboxId: string, imageId: string): void;
   /** Update last activity timestamp */
@@ -326,8 +328,18 @@ export class SandboxLifecycleManager {
         this.storage.updateSandboxModalObjectId(result.providerObjectId);
       }
 
+      // Store tunnel URL for OpenCode web UI access
+      if (result.tunnelUrl) {
+        this.storage.updateSandboxTunnelUrl(result.tunnelUrl);
+      }
+
       this.storage.updateSandboxStatus("connecting");
       this.broadcaster.broadcast({ type: "sandbox_status", status: "connecting" });
+
+      // Broadcast tunnel URL so web client can show "Open in browser" link
+      if (result.tunnelUrl) {
+        this.broadcaster.broadcast({ type: "sandbox_tunnel", tunnelUrl: result.tunnelUrl });
+      }
 
       // Reset circuit breaker on successful spawn initiation
       this.storage.resetCircuitBreaker();
@@ -436,12 +448,22 @@ export class SandboxLifecycleManager {
           this.storage.updateSandboxModalObjectId(result.providerObjectId);
         }
 
+        // Store tunnel URL for OpenCode web UI access
+        if (result.tunnelUrl) {
+          this.storage.updateSandboxTunnelUrl(result.tunnelUrl);
+        }
+
         this.storage.updateSandboxStatus("connecting");
         this.broadcaster.broadcast({ type: "sandbox_status", status: "connecting" });
         this.broadcaster.broadcast({
           type: "sandbox_restored",
           message: "Session restored from snapshot",
         });
+
+        // Broadcast tunnel URL so web client can show "Open in browser" link
+        if (result.tunnelUrl) {
+          this.broadcaster.broadcast({ type: "sandbox_tunnel", tunnelUrl: result.tunnelUrl });
+        }
       } else {
         this.log.error("Snapshot restore failed", {
           error: result.error,

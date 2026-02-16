@@ -52,6 +52,7 @@ export interface CreateSandboxResponse {
   modalObjectId?: string; // Modal's internal object ID for snapshot API
   status: string;
   createdAt: number;
+  tunnelUrl?: string; // Public URL for OpenCode web UI
 }
 
 export interface WarmSandboxRequest {
@@ -203,6 +204,7 @@ export class ModalClient {
         modal_object_id?: string;
         status: string;
         created_at: number;
+        tunnel_url?: string;
       }>;
 
       if (!result.success || !result.data) {
@@ -215,6 +217,7 @@ export class ModalClient {
         modalObjectId: result.data.modal_object_id,
         status: result.data.status,
         createdAt: result.data.created_at,
+        tunnelUrl: result.data.tunnel_url,
       };
     } finally {
       log.info("modal.request", {

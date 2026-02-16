@@ -79,6 +79,7 @@ export class ModalSandboxProvider implements SandboxProvider {
         providerObjectId: result.modalObjectId,
         status: result.status,
         createdAt: result.createdAt,
+        tunnelUrl: result.tunnelUrl,
       };
     } catch (error) {
       throw this.classifyError("Failed to create sandbox", error);
@@ -130,7 +131,7 @@ export class ModalSandboxProvider implements SandboxProvider {
 
       const result = (await response.json()) as {
         success: boolean;
-        data?: { sandbox_id: string; modal_object_id?: string };
+        data?: { sandbox_id: string; modal_object_id?: string; tunnel_url?: string };
         error?: string;
       };
 
@@ -139,6 +140,7 @@ export class ModalSandboxProvider implements SandboxProvider {
           success: true,
           sandboxId: result.data?.sandbox_id,
           providerObjectId: result.data?.modal_object_id,
+          tunnelUrl: result.data?.tunnel_url,
         };
       }
 

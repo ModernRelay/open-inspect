@@ -245,6 +245,7 @@ export interface SessionState {
   model?: string;
   reasoningEffort?: string;
   isProcessing: boolean;
+  tunnelUrl?: string;
 }
 
 // Participant presence

@@ -364,18 +364,15 @@ class SandboxSupervisor:
         env = {
             **os.environ,
             "OPENCODE_CONFIG_CONTENT": json.dumps(opencode_config),
-            # Disable OpenCode's question tool in headless mode. The tool blocks
-            # on a Promise waiting for user input via the HTTP API, but the bridge
-            # has no channel to relay questions to the web client and back. Without
-            # this, the session hangs until the SSE inactivity timeout (120s).
-            # See: https://github.com/anomalyco/opencode/blob/19b1222cd/packages/opencode/src/tool/registry.ts#L100
-            "OPENCODE_CLIENT": "serve",
+            # OpenCode web mode serves both the API and web UI.
+            # The question tool is available since users can interact via the web UI.
+            "OPENCODE_CLIENT": "web",
         }
 
-        # Start OpenCode server in the repo directory
+        # Start OpenCode web server (serves both API and web UI)
         self.opencode_process = await asyncio.create_subprocess_exec(
             "opencode",
-            "serve",
+            "web",
             "--port",
             str(self.OPENCODE_PORT),
             "--hostname",

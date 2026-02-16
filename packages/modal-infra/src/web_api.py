@@ -178,6 +178,7 @@ async def api_create_sandbox(
                 "modal_object_id": handle.modal_object_id,  # Modal's internal ID for snapshot API
                 "status": handle.status.value,
                 "created_at": handle.created_at,
+                "tunnel_url": handle.tunnel_url,  # Public URL for OpenCode web UI
             },
         }
     except Exception as e:
@@ -541,6 +542,7 @@ async def api_restore_sandbox(
                 "sandbox_id": handle.sandbox_id,
                 "modal_object_id": handle.modal_object_id,
                 "status": handle.status.value,
+                "tunnel_url": handle.tunnel_url,  # Public URL for OpenCode web UI
             },
         }
     except HTTPException as e:

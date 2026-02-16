@@ -194,4 +194,7 @@ export function initSchema(sql: SqlStorage): void {
 
   // Migration: Add reasoning_effort column to messages table for per-message reasoning override
   runMigration(sql, `ALTER TABLE messages ADD COLUMN reasoning_effort TEXT`);
+
+  // Migration: Add tunnel_url column to sandbox table for OpenCode web UI access
+  runMigration(sql, `ALTER TABLE sandbox ADD COLUMN tunnel_url TEXT`);
 }

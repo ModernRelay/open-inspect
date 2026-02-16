@@ -67,6 +67,8 @@ export interface CreateSandboxResult {
   status: string;
   /** Creation timestamp */
   createdAt: number;
+  /** Public URL for OpenCode web UI (via tunnel) */
+  tunnelUrl?: string;
 }
 
 /**
@@ -111,6 +113,8 @@ export interface RestoreResult {
   sandboxId?: string;
   /** Provider's internal object ID (e.g., Modal's object ID for snapshot API) */
   providerObjectId?: string;
+  /** Public URL for OpenCode web UI (via tunnel) */
+  tunnelUrl?: string;
   /** Error message if failed */
   error?: string;
 }
