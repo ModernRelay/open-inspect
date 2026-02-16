@@ -75,6 +75,7 @@ base_image = (
         "openssh-client",
         "jq",
         "unzip",  # Required for Bun installation
+        "wget",  # For downloading binaries
         # Networking tools for Docker-in-Docker
         "iproute2",
         "iptables",
