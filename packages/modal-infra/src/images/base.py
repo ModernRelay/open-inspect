@@ -24,7 +24,7 @@ OPENCODE_VERSION = "latest"
 
 # Cache buster - change this to force Modal image rebuild
 # v37: Codex auth proxy plugin for centralized token refresh
-CACHE_BUSTER = "v37-codex-auth-proxy-plugin"
+CACHE_BUSTER = "v38-anthropic-oauth-plugin"
 
 # Base image with all development tools
 base_image = (
@@ -94,6 +94,8 @@ base_image = (
         # Install @opencode-ai/plugin globally for custom tools
         # This ensures tools can import the plugin without needing to run bun add
         "npm install -g @opencode-ai/plugin@latest zod",
+        # Install Anthropic OAuth plugin for OpenCode
+        "npm install -g opencode-anthropic-auth@0.0.7",
     )
     # Install Playwright browsers (Chromium only to save space)
     .run_commands(

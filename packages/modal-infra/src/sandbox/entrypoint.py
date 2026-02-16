@@ -258,9 +258,51 @@ class SandboxSupervisor:
         except Exception as e:
             self.log.warn("openai_oauth.setup_error", exc=e)
 
+    def _setup_anthropic_oauth(self) -> None:
+        """Write OpenCode auth.json for Anthropic OAuth if refresh token is configured."""
+        refresh_token = os.environ.get("ANTHROPIC_OAUTH_REFRESH_TOKEN")
+        if not refresh_token:
+            return
+
+        try:
+            auth_dir = Path.home() / ".local" / "share" / "opencode"
+            auth_dir.mkdir(parents=True, exist_ok=True)
+
+            auth_file = auth_dir / "auth.json"
+
+            # Load existing auth.json (may have openai entry)
+            existing = {}
+            if auth_file.exists():
+                try:
+                    existing = json.loads(auth_file.read_text())
+                except Exception:
+                    pass
+
+            # Add/update anthropic entry
+            existing["anthropic"] = {
+                "type": "oauth",
+                "refresh": refresh_token,
+                "access": "",
+                "expires": 0,
+            }
+
+            # Write atomically with restrictive permissions
+            tmp_file = auth_dir / ".auth.json.tmp"
+            fd = os.open(str(tmp_file), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            try:
+                os.write(fd, json.dumps(existing).encode())
+            finally:
+                os.close(fd)
+            tmp_file.replace(auth_file)
+
+            self.log.info("anthropic_oauth.setup")
+        except Exception as e:
+            self.log.warn("anthropic_oauth.setup_error", exc=e)
+
     async def start_opencode(self) -> None:
         """Start OpenCode server with configuration."""
         self._setup_openai_oauth()
+        self._setup_anthropic_oauth()
         self.log.info("opencode.start")
 
         # Build OpenCode config from session settings
@@ -275,6 +317,11 @@ class SandboxSupervisor:
                 },
             },
         }
+
+        # Add Anthropic OAuth plugin if configured
+        if os.environ.get("ANTHROPIC_OAUTH_REFRESH_TOKEN"):
+            opencode_config["plugin"] = opencode_config.get("plugin", [])
+            opencode_config["plugin"].append("opencode-anthropic-auth")
 
         # Determine working directory - use repo path if cloned, otherwise /workspace
         workdir = self.workspace_path

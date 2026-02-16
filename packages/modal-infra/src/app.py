@@ -29,9 +29,9 @@ function_image = modal.Image.debian_slim(python_version="3.12").pip_install(
 
 # Secrets for LLM API keys - defined in Modal dashboard or CLI
 # These are injected into sandboxes but never stored in snapshots
+# Note: ANTHROPIC_API_KEY is optional when using Anthropic OAuth plugin
 llm_secrets = modal.Secret.from_name(
     "llm-api-keys",
-    required_keys=["ANTHROPIC_API_KEY"],
 )
 
 # Secrets for GitHub App - used for git operations (clone, push)
