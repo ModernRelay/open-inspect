@@ -27,7 +27,7 @@ OPENCODE_VERSION = "latest"
 
 # Cache buster - change this to force Modal image rebuild
 # v39: Docker-in-Docker + Supabase CLI support
-CACHE_BUSTER = "v40-fix-iptables-paths"
+CACHE_BUSTER = "v42-vfs-storage-driver"
 
 # Dockerd startup script for Docker-in-Docker support
 # Sets up iptables NAT rules and starts dockerd with legacy iptables
@@ -56,7 +56,10 @@ echo 1 > /proc/sys/net/ipv4/ip_forward
 /usr/sbin/iptables-legacy -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p tcp
 /usr/sbin/iptables-legacy -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p udp
 
-exec /usr/bin/dockerd --iptables=false --ip6tables=false -D
+# Use vfs storage driver to avoid overlay-on-overlay layer depth issues.
+# The Modal sandbox itself uses overlayfs, and images like Supabase Postgres have 50+ layers,
+# which exceeds the kernel's mount option page size limit when nested. vfs has no layer limit.
+exec /usr/bin/dockerd --iptables=false --ip6tables=false --storage-driver=vfs -D
 """
 
 _START_DOCKERD_B64 = base64.b64encode(_START_DOCKERD_SCRIPT.encode()).decode()
