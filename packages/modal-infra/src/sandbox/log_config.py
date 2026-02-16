@@ -82,7 +82,11 @@ def configure_logging() -> None:
     handler = logging.StreamHandler()
     handler.setFormatter(JSONFormatter())
     logging.root.handlers = [handler]
-    logging.root.setLevel(logging.DEBUG)
+    logging.root.setLevel(logging.INFO)
+
+    # Silence noisy third-party libraries
+    for name in ("hpack", "httpcore", "httpx", "websockets", "asyncio"):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 class StructuredLogger:
