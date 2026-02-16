@@ -27,7 +27,7 @@ OPENCODE_VERSION = "latest"
 
 # Cache buster - change this to force Modal image rebuild
 # v39: Docker-in-Docker + Supabase CLI support
-CACHE_BUSTER = "v39-docker-supabase"
+CACHE_BUSTER = "v40-fix-iptables-paths"
 
 # Dockerd startup script for Docker-in-Docker support
 # Sets up iptables NAT rules and starts dockerd with legacy iptables
@@ -51,11 +51,10 @@ fi
 echo "IP address for $dev: $addr"
 
 echo 1 > /proc/sys/net/ipv4/ip_forward
-iptables-legacy -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p tcp
-iptables-legacy -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p udp
 
-update-alternatives --set iptables /usr/sbin/iptables-legacy
-update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
+# Use full paths for iptables-legacy (update-alternatives may not persist at runtime)
+/usr/sbin/iptables-legacy -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p tcp
+/usr/sbin/iptables-legacy -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p udp
 
 exec /usr/bin/dockerd --iptables=false --ip6tables=false -D
 """
