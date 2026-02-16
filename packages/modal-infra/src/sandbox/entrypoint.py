@@ -355,6 +355,68 @@ class SandboxSupervisor:
         self.docker_ready.set()  # Allow startup to proceed anyway
         return False
 
+    async def load_supabase_images(self) -> None:
+        """Load pre-pulled Supabase Docker images from tarballs into Docker.
+
+        Images are pre-pulled as tarballs during the Modal image build using crane,
+        then loaded here after dockerd starts. This avoids slow image pulls at runtime.
+        """
+        images_dir = Path("/var/lib/supabase-images")
+        if not images_dir.exists():
+            self.log.debug("docker_images.skip", reason="no_images_dir")
+            return
+
+        tarballs = sorted(images_dir.glob("*.tar"))
+        if not tarballs:
+            self.log.debug("docker_images.skip", reason="no_tarballs")
+            return
+
+        self.log.info("docker_images.load_start", count=len(tarballs))
+        start_time = time.time()
+
+        # Load all tarballs concurrently
+        tasks = []
+        for tarball in tarballs:
+            tasks.append(self._load_docker_tarball(tarball))
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        loaded = sum(1 for r in results if r is True)
+        failed = sum(1 for r in results if r is not True)
+        duration_ms = int((time.time() - start_time) * 1000)
+        self.log.info(
+            "docker_images.load_complete",
+            loaded=loaded,
+            failed=failed,
+            duration_ms=duration_ms,
+        )
+
+    async def _load_docker_tarball(self, tarball: Path) -> bool:
+        """Load a single Docker image tarball."""
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "docker", "load", "-i", str(tarball),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+            if proc.returncode == 0:
+                self.log.debug(
+                    "docker_images.loaded",
+                    tarball=tarball.name,
+                    output=stdout.decode().strip(),
+                )
+                return True
+            else:
+                self.log.warn(
+                    "docker_images.load_failed",
+                    tarball=tarball.name,
+                    stderr=stderr.decode().strip(),
+                )
+                return False
+        except Exception as e:
+            self.log.warn("docker_images.load_error", tarball=tarball.name, exc=e)
+            return False
+
     async def start_opencode(self) -> None:
         """Start OpenCode server with configuration."""
         self._setup_openai_oauth()
@@ -873,6 +935,10 @@ class SandboxSupervisor:
             # Phase 2: Start Docker daemon (needed before setup script runs)
             await self.start_dockerd()
             await self.wait_for_docker()
+
+            # Phase 2.5: Load pre-pulled Supabase images into Docker
+            if self.docker_ready.is_set() and not restored_from_snapshot:
+                await self.load_supabase_images()
 
             # Phase 3: Configure git identity (if repo was cloned)
             await self.configure_git_identity()
