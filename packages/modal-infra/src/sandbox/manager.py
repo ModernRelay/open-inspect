@@ -25,6 +25,8 @@ log = get_logger("manager")
 
 DEFAULT_SANDBOX_TIMEOUT_SECONDS = 7200  # 2 hours
 OPENCODE_PORT = 4096  # Port for OpenCode web UI
+SUPABASE_API_PORT = 54321  # Supabase API port
+SUPABASE_STUDIO_PORT = 54323  # Supabase Studio port
 
 
 @dataclass
@@ -150,7 +152,10 @@ class SandboxManager:
             timeout=config.timeout_seconds,
             workdir="/workspace",
             env=env_vars,
-            encrypted_ports=[OPENCODE_PORT],  # Expose OpenCode web UI via tunnel
+            encrypted_ports=[OPENCODE_PORT, SUPABASE_API_PORT, SUPABASE_STUDIO_PORT],
+            experimental_options={"enable_docker": True},
+            cpu=4.0,
+            memory=8192,
         )
 
         # Get Modal's internal object ID for API calls (snapshot, etc.)
@@ -383,7 +388,10 @@ class SandboxManager:
             timeout=timeout_seconds,
             workdir="/workspace",
             env=env_vars,
-            encrypted_ports=[OPENCODE_PORT],  # Expose OpenCode web UI via tunnel
+            encrypted_ports=[OPENCODE_PORT, SUPABASE_API_PORT, SUPABASE_STUDIO_PORT],
+            experimental_options={"enable_docker": True},
+            cpu=4.0,
+            memory=8192,
         )
 
         modal_object_id = sandbox.object_id

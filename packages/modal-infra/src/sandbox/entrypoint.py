@@ -47,9 +47,11 @@ class SandboxSupervisor:
     DEFAULT_SETUP_TIMEOUT_SECONDS = 300
 
     def __init__(self):
+        self.dockerd_process: asyncio.subprocess.Process | None = None
         self.opencode_process: asyncio.subprocess.Process | None = None
         self.bridge_process: asyncio.subprocess.Process | None = None
         self.shutdown_event = asyncio.Event()
+        self.docker_ready = asyncio.Event()
         self.git_sync_complete = asyncio.Event()
         self.opencode_ready = asyncio.Event()
 
@@ -298,6 +300,60 @@ class SandboxSupervisor:
             self.log.info("anthropic_oauth.setup")
         except Exception as e:
             self.log.warn("anthropic_oauth.setup_error", exc=e)
+
+    async def start_dockerd(self) -> None:
+        """Start Docker daemon in the background for Docker-in-Docker support."""
+        dockerd_script = Path("/start-dockerd.sh")
+        if not dockerd_script.exists():
+            self.log.info("dockerd.skip", reason="no_startup_script")
+            self.docker_ready.set()
+            return
+
+        self.log.info("dockerd.start")
+        self.dockerd_process = await asyncio.create_subprocess_exec(
+            "/start-dockerd.sh",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        asyncio.create_task(self._forward_dockerd_logs())
+
+    async def _forward_dockerd_logs(self) -> None:
+        """Forward dockerd stdout to supervisor stdout."""
+        if not self.dockerd_process or not self.dockerd_process.stdout:
+            return
+        try:
+            async for line in self.dockerd_process.stdout:
+                print(f"[dockerd] {line.decode().rstrip()}")
+        except Exception as e:
+            print(f"[supervisor] Docker log forwarding error: {e}")
+
+    async def wait_for_docker(self, timeout: float = 90.0) -> bool:
+        """Wait for Docker daemon to become ready."""
+        dockerd_script = Path("/start-dockerd.sh")
+        if not dockerd_script.exists():
+            self.docker_ready.set()
+            return True
+
+        self.log.info("dockerd.waiting")
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            if self.shutdown_event.is_set():
+                return False
+            proc = await asyncio.create_subprocess_exec(
+                "docker", "info",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await proc.wait()
+            if proc.returncode == 0:
+                self.log.info("dockerd.ready", duration_ms=int((time.time() - start_time) * 1000))
+                self.docker_ready.set()
+                return True
+            await asyncio.sleep(2.0)
+
+        self.log.error("dockerd.timeout", timeout_seconds=timeout)
+        self.docker_ready.set()  # Allow startup to proceed anyway
+        return False
 
     async def start_opencode(self) -> None:
         """Start OpenCode server with configuration."""
@@ -814,19 +870,23 @@ class SandboxSupervisor:
                 # Fresh sandbox - full git clone and sync
                 git_sync_success = await self.perform_git_sync()
 
-            # Phase 2: Configure git identity (if repo was cloned)
+            # Phase 2: Start Docker daemon (needed before setup script runs)
+            await self.start_dockerd()
+            await self.wait_for_docker()
+
+            # Phase 3: Configure git identity (if repo was cloned)
             await self.configure_git_identity()
 
-            # Phase 2.5: Run repo setup script (fresh clone only)
+            # Phase 3.5: Run repo setup script (fresh clone only, dockerd is ready)
             setup_success: bool | None = None
             if not restored_from_snapshot:
                 setup_success = await self.run_setup_script()
 
-            # Phase 3: Start OpenCode server (in repo directory)
+            # Phase 4: Start OpenCode server (in repo directory)
             await self.start_opencode()
             opencode_ready = True
 
-            # Phase 4: Start bridge (after OpenCode is ready)
+            # Phase 5: Start bridge (after OpenCode is ready)
             await self.start_bridge()
 
             # Emit sandbox.startup wide event
@@ -843,7 +903,7 @@ class SandboxSupervisor:
                 outcome="success",
             )
 
-            # Phase 5: Monitor processes
+            # Phase 6: Monitor processes
             await self.monitor_processes()
 
         except Exception as e:
@@ -877,6 +937,14 @@ class SandboxSupervisor:
                 await asyncio.wait_for(self.opencode_process.wait(), timeout=10.0)
             except TimeoutError:
                 self.opencode_process.kill()
+
+        # Terminate Docker daemon
+        if self.dockerd_process and self.dockerd_process.returncode is None:
+            self.dockerd_process.terminate()
+            try:
+                await asyncio.wait_for(self.dockerd_process.wait(), timeout=5.0)
+            except TimeoutError:
+                self.dockerd_process.kill()
 
         self.log.info("supervisor.shutdown_complete")
 

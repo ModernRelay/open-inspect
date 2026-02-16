@@ -7,9 +7,12 @@ This image provides a complete development environment with:
 - Python 3.12 with uv
 - OpenCode CLI pre-installed
 - Playwright with headless Chrome for visual verification
+- Docker CE for Docker-in-Docker support (Supabase, etc.)
+- Supabase CLI
 - Sandbox entrypoint and bridge code
 """
 
+import base64
 from pathlib import Path
 
 import modal
@@ -23,8 +26,41 @@ SANDBOX_DIR = Path(__file__).parent.parent / "sandbox"
 OPENCODE_VERSION = "latest"
 
 # Cache buster - change this to force Modal image rebuild
-# v37: Codex auth proxy plugin for centralized token refresh
-CACHE_BUSTER = "v38-anthropic-oauth-plugin"
+# v39: Docker-in-Docker + Supabase CLI support
+CACHE_BUSTER = "v39-docker-supabase"
+
+# Dockerd startup script for Docker-in-Docker support
+# Sets up iptables NAT rules and starts dockerd with legacy iptables
+_START_DOCKERD_SCRIPT = r"""#!/bin/bash
+set -xe -o pipefail
+
+dev=$(ip route show default | awk '/default/ {print $5}')
+if [ -z "$dev" ]; then
+    echo "Error: No default device found."
+    ip route show
+    exit 1
+fi
+echo "Default device: $dev"
+
+addr=$(ip addr show dev "$dev" | grep -w inet | awk '{print $2}' | cut -d/ -f1)
+if [ -z "$addr" ]; then
+    echo "Error: No IP address found for device $dev."
+    ip addr show dev "$dev"
+    exit 1
+fi
+echo "IP address for $dev: $addr"
+
+echo 1 > /proc/sys/net/ipv4/ip_forward
+iptables-legacy -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p tcp
+iptables-legacy -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p udp
+
+update-alternatives --set iptables /usr/sbin/iptables-legacy
+update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
+
+exec /usr/bin/dockerd --iptables=false --ip6tables=false -D
+"""
+
+_START_DOCKERD_B64 = base64.b64encode(_START_DOCKERD_SCRIPT.encode()).decode()
 
 # Base image with all development tools
 base_image = (
@@ -39,6 +75,10 @@ base_image = (
         "openssh-client",
         "jq",
         "unzip",  # Required for Bun installation
+        # Networking tools for Docker-in-Docker
+        "iproute2",
+        "iptables",
+        "net-tools",
         # For Playwright
         "libnss3",
         "libnspr4",
@@ -55,6 +95,45 @@ base_image = (
         "libasound2",
         "libpango-1.0-0",
         "libcairo2",
+    )
+    # Install Docker CE for Docker-in-Docker support
+    .run_commands(
+        "install -m 0755 -d /etc/apt/keyrings",
+        "curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc",
+        "chmod a+r /etc/apt/keyrings/docker.asc",
+        'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo $VERSION_CODENAME) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null',
+        "apt-get update",
+    )
+    .apt_install(
+        "docker-ce",
+        "docker-ce-cli",
+        "containerd.io",
+        "docker-buildx-plugin",
+        "docker-compose-plugin",
+    )
+    # Upgrade runc for Modal compatibility
+    .run_commands(
+        "rm -f $(which runc)",
+        "wget -q https://github.com/opencontainers/runc/releases/download/v1.3.0/runc.amd64",
+        "chmod +x runc.amd64",
+        "mv runc.amd64 /usr/local/bin/runc",
+    )
+    # Set iptables to legacy mode (required for Docker-in-Docker on Modal)
+    .run_commands(
+        "update-alternatives --set iptables /usr/sbin/iptables-legacy",
+        "update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy",
+    )
+    # Install Supabase CLI
+    .run_commands(
+        "curl -fsSL $(curl -s https://api.github.com/repos/supabase/cli/releases/latest | grep 'browser_download_url.*linux_amd64.deb' | cut -d '\"' -f 4) -o /tmp/supabase.deb",
+        "dpkg -i /tmp/supabase.deb",
+        "rm /tmp/supabase.deb",
+        "supabase --version || echo 'Supabase CLI installed'",
+    )
+    # Bake dockerd startup script into image
+    .run_commands(
+        f"echo '{_START_DOCKERD_B64}' | base64 -d > /start-dockerd.sh",
+        "chmod +x /start-dockerd.sh",
     )
     # Install Node.js 22 LTS
     .run_commands(
@@ -73,8 +152,8 @@ base_image = (
         # Install Bun
         "curl -fsSL https://bun.sh/install | bash",
         # Add Bun to PATH for subsequent commands
-        'echo "export BUN_INSTALL="$HOME/.bun"" >> /etc/profile.d/bun.sh',
-        'echo "export PATH="$BUN_INSTALL/bin:$PATH"" >> /etc/profile.d/bun.sh',
+        'echo "export BUN_INSTALL=\"$HOME/.bun\"" >> /etc/profile.d/bun.sh',
+        'echo "export PATH=\"$BUN_INSTALL/bin:$PATH\"" >> /etc/profile.d/bun.sh',
     )
     # Install Python tools
     .pip_install(
