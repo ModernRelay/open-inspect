@@ -27,7 +27,7 @@ OPENCODE_VERSION = "latest"
 
 # Cache buster - change this to force Modal image rebuild
 # v39: Docker-in-Docker + Supabase CLI support
-CACHE_BUSTER = "v49-ubuntu22-docker27"
+CACHE_BUSTER = "v50-iptables-legacy-path-fix"
 
 # Dockerd startup script for Docker-in-Docker support
 # Sets up iptables NAT rules and starts dockerd
@@ -53,11 +53,28 @@ echo "IP address for $dev: $addr"
 
 echo 1 > /proc/sys/net/ipv4/ip_forward
 
-iptables-legacy -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p tcp
-iptables-legacy -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p udp
+iptables_cmd=""
+if [ -x /usr/sbin/iptables-legacy ]; then
+    iptables_cmd="/usr/sbin/iptables-legacy"
+elif command -v iptables-legacy >/dev/null 2>&1; then
+    iptables_cmd="$(command -v iptables-legacy)"
+elif command -v iptables >/dev/null 2>&1; then
+    iptables_cmd="$(command -v iptables)"
+fi
 
-update-alternatives --set iptables /usr/sbin/iptables-legacy
-update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
+if [ -n "$iptables_cmd" ]; then
+    "$iptables_cmd" -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p tcp || true
+    "$iptables_cmd" -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p udp || true
+else
+    echo "Warning: no iptables binary found, skipping NAT setup"
+fi
+
+if [ -x /usr/sbin/iptables-legacy ]; then
+    /usr/sbin/update-alternatives --set iptables /usr/sbin/iptables-legacy || true
+fi
+if [ -x /usr/sbin/ip6tables-legacy ]; then
+    /usr/sbin/update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy || true
+fi
 
 exec /usr/bin/dockerd --iptables=false --ip6tables=false -D
 """
@@ -155,8 +172,8 @@ base_image = (
         # Install Bun
         "curl -fsSL https://bun.sh/install | bash",
         # Add Bun to PATH for subsequent commands
-        'echo "export BUN_INSTALL=\"$HOME/.bun\"" >> /etc/profile.d/bun.sh',
-        'echo "export PATH=\"$BUN_INSTALL/bin:$PATH\"" >> /etc/profile.d/bun.sh',
+        'echo "export BUN_INSTALL="$HOME/.bun"" >> /etc/profile.d/bun.sh',
+        'echo "export PATH="$BUN_INSTALL/bin:$PATH"" >> /etc/profile.d/bun.sh',
     )
     # Install Python tools
     .pip_install(
