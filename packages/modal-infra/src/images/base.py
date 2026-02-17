@@ -2,7 +2,7 @@
 Base image definition for Open-Inspect sandboxes.
 
 This image provides a complete development environment with:
-- Debian slim base with git, curl, build-essential
+- Ubuntu 22.04 (Jammy) base with git, curl, build-essential
 - Node.js 22 LTS, pnpm, Bun runtime
 - Python 3.12 with uv
 - OpenCode CLI pre-installed
@@ -27,10 +27,11 @@ OPENCODE_VERSION = "latest"
 
 # Cache buster - change this to force Modal image rebuild
 # v39: Docker-in-Docker + Supabase CLI support
-CACHE_BUSTER = "v48-no-prepull"
+CACHE_BUSTER = "v49-ubuntu22-docker27"
 
 # Dockerd startup script for Docker-in-Docker support
-# Sets up tmpfs-backed Docker storage, iptables NAT rules, and starts dockerd
+# Sets up iptables NAT rules and starts dockerd
+# Uses Docker 5:27.5.0 on Ubuntu 22.04 which supports overlay2 natively on Modal.
 _START_DOCKERD_SCRIPT = r"""#!/bin/bash
 set -xe -o pipefail
 
@@ -52,25 +53,23 @@ echo "IP address for $dev: $addr"
 
 echo 1 > /proc/sys/net/ipv4/ip_forward
 
-# Use full paths for iptables-legacy (update-alternatives may not persist at runtime)
-/usr/sbin/iptables-legacy -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p tcp
-/usr/sbin/iptables-legacy -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p udp
+iptables-legacy -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p tcp
+iptables-legacy -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p udp
 
-# Mount tmpfs on /var/lib/docker so Docker sees tmpfs (not overlayfs) as the backing
-# filesystem. This allows overlay2 storage driver instead of vfs, which is dramatically
-# faster for docker load/pull (overlay2 uses copy-on-write, vfs does full copies).
-# The Modal sandbox itself uses overlayfs, and nested overlay-on-overlay hits kernel
-# mount option page size limits. tmpfs sidesteps this entirely.
-mount -t tmpfs -o size=10g tmpfs /var/lib/docker
+update-alternatives --set iptables /usr/sbin/iptables-legacy
+update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
 
-exec /usr/bin/dockerd --iptables=false --ip6tables=false --storage-driver=overlay2 -D
+exec /usr/bin/dockerd --iptables=false --ip6tables=false -D
 """
 
 _START_DOCKERD_B64 = base64.b64encode(_START_DOCKERD_SCRIPT.encode()).decode()
 
 # Base image with all development tools
+# Ubuntu 22.04 + Docker CE 5:27.5.0 is the tested combination that supports
+# overlay2 storage driver and bridge networking inside Modal sandboxes.
 base_image = (
-    modal.Image.debian_slim(python_version="3.12")
+    modal.Image.from_registry("ubuntu:22.04", add_python="3.12")
+    .env({"DEBIAN_FRONTEND": "noninteractive"})
     # System packages
     .apt_install(
         "git",
@@ -103,17 +102,19 @@ base_image = (
         "libpango-1.0-0",
         "libcairo2",
     )
-    # Install Docker CE for Docker-in-Docker support
+    # Install Docker CE 5:27.5.0 for Docker-in-Docker support.
+    # This specific version is pinned because it works with Modal's sandbox seccomp
+    # profile: overlay2 storage driver and bridge networking both function correctly.
     .run_commands(
         "install -m 0755 -d /etc/apt/keyrings",
-        "curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc",
+        "curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc",
         "chmod a+r /etc/apt/keyrings/docker.asc",
-        'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo $VERSION_CODENAME) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null',
+        'echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu jammy stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null',
         "apt-get update",
     )
     .apt_install(
-        "docker-ce",
-        "docker-ce-cli",
+        "docker-ce=5:27.5.0-1~ubuntu.22.04~jammy",
+        "docker-ce-cli=5:27.5.0-1~ubuntu.22.04~jammy",
         "containerd.io",
         "docker-buildx-plugin",
         "docker-compose-plugin",
@@ -124,11 +125,6 @@ base_image = (
         "wget -q https://github.com/opencontainers/runc/releases/download/v1.3.0/runc.amd64",
         "chmod +x runc.amd64",
         "mv runc.amd64 /usr/local/bin/runc",
-    )
-    # Set iptables to legacy mode (required for Docker-in-Docker on Modal)
-    .run_commands(
-        "update-alternatives --set iptables /usr/sbin/iptables-legacy",
-        "update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy",
     )
     # Install Supabase CLI
     .run_commands(
