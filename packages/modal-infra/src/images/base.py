@@ -27,7 +27,7 @@ OPENCODE_VERSION = "latest"
 
 # Cache buster - change this to force Modal image rebuild
 # v39: Docker-in-Docker + Supabase CLI support
-CACHE_BUSTER = "v43-pre-pull-supabase-images"
+CACHE_BUSTER = "v46-tmpfs-overlay2-8g"
 
 # Supabase Docker images to pre-pull during image build.
 # These are pulled as tarballs using crane (no Docker daemon needed at build time),
@@ -60,7 +60,7 @@ for _img in _SUPABASE_IMAGES:
     )
 
 # Dockerd startup script for Docker-in-Docker support
-# Sets up iptables NAT rules and starts dockerd with legacy iptables
+# Sets up tmpfs-backed Docker storage, iptables NAT rules, and starts dockerd
 _START_DOCKERD_SCRIPT = r"""#!/bin/bash
 set -xe -o pipefail
 
@@ -86,10 +86,14 @@ echo 1 > /proc/sys/net/ipv4/ip_forward
 /usr/sbin/iptables-legacy -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p tcp
 /usr/sbin/iptables-legacy -t nat -A POSTROUTING -o "$dev" -j SNAT --to-source "$addr" -p udp
 
-# Use vfs storage driver to avoid overlay-on-overlay layer depth issues.
-# The Modal sandbox itself uses overlayfs, and images like Supabase Postgres have 50+ layers,
-# which exceeds the kernel's mount option page size limit when nested. vfs has no layer limit.
-exec /usr/bin/dockerd --iptables=false --ip6tables=false --storage-driver=vfs -D
+# Mount tmpfs on /var/lib/docker so Docker sees tmpfs (not overlayfs) as the backing
+# filesystem. This allows overlay2 storage driver instead of vfs, which is dramatically
+# faster for docker load/pull (overlay2 uses copy-on-write, vfs does full copies).
+# The Modal sandbox itself uses overlayfs, and nested overlay-on-overlay hits kernel
+# mount option page size limits. tmpfs sidesteps this entirely.
+mount -t tmpfs -o size=8g tmpfs /var/lib/docker
+
+exec /usr/bin/dockerd --iptables=false --ip6tables=false --storage-driver=overlay2 -D
 """
 
 _START_DOCKERD_B64 = base64.b64encode(_START_DOCKERD_SCRIPT.encode()).decode()

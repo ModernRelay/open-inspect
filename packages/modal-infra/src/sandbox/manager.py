@@ -155,7 +155,7 @@ class SandboxManager:
             encrypted_ports=[OPENCODE_PORT, SUPABASE_API_PORT, SUPABASE_STUDIO_PORT],
             experimental_options={"enable_docker": True},
             cpu=4.0,
-            memory=8192,
+            memory=16384,
         )
 
         # Get Modal's internal object ID for API calls (snapshot, etc.)
@@ -391,7 +391,7 @@ class SandboxManager:
             encrypted_ports=[OPENCODE_PORT, SUPABASE_API_PORT, SUPABASE_STUDIO_PORT],
             experimental_options={"enable_docker": True},
             cpu=4.0,
-            memory=8192,
+            memory=16384,
         )
 
         modal_object_id = sandbox.object_id
