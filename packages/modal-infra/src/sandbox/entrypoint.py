@@ -12,6 +12,7 @@ Runs as PID 1 inside the sandbox. Responsibilities:
 """
 
 import asyncio
+import contextlib
 import json
 import os
 import shutil
@@ -275,10 +276,8 @@ class SandboxSupervisor:
             # Load existing auth.json (may have openai entry)
             existing = {}
             if auth_file.exists():
-                try:
+                with contextlib.suppress(Exception):
                     existing = json.loads(auth_file.read_text())
-                except Exception:
-                    pass
 
             # Add/update anthropic entry
             existing["anthropic"] = {
@@ -340,7 +339,8 @@ class SandboxSupervisor:
             if self.shutdown_event.is_set():
                 return False
             proc = await asyncio.create_subprocess_exec(
-                "docker", "info",
+                "docker",
+                "info",
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
             )
@@ -870,8 +870,7 @@ class SandboxSupervisor:
                 # Fresh sandbox - full git clone and sync
                 git_sync_success = await self.perform_git_sync()
 
-            # Phase 2: Start Docker daemon (needed before setup script runs)
-            await self.start_dockerd()
+            # Phase 2: Wait for Docker daemon (started by launch.sh before Python)
             await self.wait_for_docker()
 
             # Phase 3: Configure git identity (if repo was cloned)

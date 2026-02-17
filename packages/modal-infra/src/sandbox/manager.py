@@ -143,9 +143,8 @@ class SandboxManager:
         # Create the sandbox
         # The entrypoint command is passed as positional args
         sandbox = modal.Sandbox.create(
-            "python",
-            "-m",
-            "sandbox.entrypoint",  # Run the supervisor entrypoint
+            "/bin/bash",
+            "/app/sandbox/launch.sh",  # Wrapper: starts dockerd then exec's Python supervisor
             image=image,
             app=app,
             secrets=[llm_secrets],
@@ -379,9 +378,8 @@ class SandboxManager:
 
         # Create the sandbox from the snapshot image
         sandbox = modal.Sandbox.create(
-            "python",
-            "-m",
-            "sandbox.entrypoint",
+            "/bin/bash",
+            "/app/sandbox/launch.sh",  # Wrapper: starts dockerd then exec's Python supervisor
             image=image,  # Use the snapshot image directly
             app=app,
             secrets=[llm_secrets],
