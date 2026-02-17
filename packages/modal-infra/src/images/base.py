@@ -27,37 +27,7 @@ OPENCODE_VERSION = "latest"
 
 # Cache buster - change this to force Modal image rebuild
 # v39: Docker-in-Docker + Supabase CLI support
-CACHE_BUSTER = "v46-tmpfs-overlay2-8g"
-
-# Supabase Docker images to pre-pull during image build.
-# These are pulled as tarballs using crane (no Docker daemon needed at build time),
-# then loaded into Docker at runtime via `docker load`.
-# Versions must match the installed Supabase CLI version (from pkg/config/templates/Dockerfile).
-_SUPABASE_IMAGES = [
-    "supabase/postgres:15.8.1.085",
-    "supabase/gotrue:v2.186.0",
-    "postgrest/postgrest:v14.3",
-    "supabase/realtime:v2.73.2",
-    "supabase/storage-api:v1.35.3",
-    "supabase/postgres-meta:v0.95.2",
-    "supabase/studio:2026.01.27-sha-2a37755",
-    "supabase/edge-runtime:v1.70.0",
-    "supabase/logflare:1.30.5",
-    "supabase/supavisor:2.7.4",
-    "library/kong:2.8.1",
-    "darthsim/imgproxy:v3.8.0",
-    "timberio/vector:0.28.1-alpine",
-    "axllent/mailpit:v1.22.3",
-]
-
-# Build crane pull commands for all Supabase images
-_CRANE_PULL_COMMANDS = ["mkdir -p /var/lib/supabase-images"]
-for _img in _SUPABASE_IMAGES:
-    # Derive tarball filename from image name (e.g., "supabase/postgres:15.8.1.085" -> "postgres.tar")
-    _tarball_name = _img.split("/")[-1].split(":")[0] + ".tar"
-    _CRANE_PULL_COMMANDS.append(
-        f"crane pull --platform=linux/amd64 {_img} /var/lib/supabase-images/{_tarball_name}"
-    )
+CACHE_BUSTER = "v48-no-prepull"
 
 # Dockerd startup script for Docker-in-Docker support
 # Sets up tmpfs-backed Docker storage, iptables NAT rules, and starts dockerd
@@ -91,7 +61,7 @@ echo 1 > /proc/sys/net/ipv4/ip_forward
 # faster for docker load/pull (overlay2 uses copy-on-write, vfs does full copies).
 # The Modal sandbox itself uses overlayfs, and nested overlay-on-overlay hits kernel
 # mount option page size limits. tmpfs sidesteps this entirely.
-mount -t tmpfs -o size=8g tmpfs /var/lib/docker
+mount -t tmpfs -o size=10g tmpfs /var/lib/docker
 
 exec /usr/bin/dockerd --iptables=false --ip6tables=false --storage-driver=overlay2 -D
 """
@@ -167,14 +137,6 @@ base_image = (
         "rm /tmp/supabase.deb",
         "supabase --version || echo 'Supabase CLI installed'",
     )
-    # Install crane for pulling Docker images without a daemon (used at build time)
-    .run_commands(
-        "curl -fsSL https://github.com/google/go-containerregistry/releases/latest/download/go-containerregistry_Linux_x86_64.tar.gz | tar -xzf - -C /usr/local/bin crane",
-        "crane version",
-    )
-    # Pre-pull Supabase Docker images as tarballs (no Docker daemon needed)
-    # These are loaded into Docker at runtime via `docker load` in entrypoint.py
-    .run_commands(*_CRANE_PULL_COMMANDS)
     # Bake dockerd startup script into image
     .run_commands(
         f"echo '{_START_DOCKERD_B64}' | base64 -d > /start-dockerd.sh",
