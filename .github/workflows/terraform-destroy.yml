@@ -53,8 +53,8 @@ jobs:
             -backend-config='endpoints={s3="https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com"}'
         working-directory: ${{ env.TF_WORKING_DIR }}
 
-      - name: Terraform Destroy (Stage 1 - Control Plane)
-        run: terraform destroy -auto-approve -target=module.control_plane_worker
+      - name: Terraform Apply (Remove Service Bindings)
+        run: terraform apply -auto-approve -var="enable_service_bindings=false"
         working-directory: ${{ env.TF_WORKING_DIR }}
         env:
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -84,7 +84,7 @@ jobs:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
 
-      - name: Terraform Destroy (Stage 2 - Remaining Infrastructure)
+      - name: Terraform Destroy
         run: terraform destroy -auto-approve
         working-directory: ${{ env.TF_WORKING_DIR }}
         env:
